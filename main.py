@@ -1,4 +1,5 @@
 import pymysql
+import os
 
 timeout = 10
 connection = pymysql.connect(
@@ -7,7 +8,7 @@ connection = pymysql.connect(
   cursorclass=pymysql.cursors.DictCursor,
   db="defaultdb",
   host="service-vinos-academia-c9e6.d.aivencloud.com",
-  password=" ",
+  password=os.getenv("DB_PASSWORD"),
   read_timeout=timeout,
   port=11434,
   user="avnadmin",
