@@ -1,11 +1,22 @@
 {
-  "name": "Vinos Dev Container",
-  // En lugar de "build", usamos directamente una imagen oficial de Python
+  "name": "Vinos Devcontainer",
+
+  // 1) Indicamos qué secrets queremos usar
+  "secrets": {
+    "DB_PASSWORD": {
+      "description": "Contraseña de la base de datos Aiven"
+    }
+  },
+
+  // 2) Inyectamos el secret como variable de entorno al contenedor
+  "remoteEnv": {
+    "DB_PASSWORD": "${secret:DB_PASSWORD}"
+  },
+
+  // Resto de tu configuración…
   "image": "mcr.microsoft.com/devcontainers/python:3.11",
   "postCreateCommand": "pip install -r requirements.txt",
   "customizations": {
-    "vscode": {
-      "extensions": ["ms-python.python"]
-    }
+    "vscode": { "extensions": ["ms-python.python"] }
   }
 }
