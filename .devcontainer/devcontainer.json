@@ -1,19 +1,19 @@
 {
   "name": "Vinos Devcontainer",
 
-  // 1) Indicamos qué secrets queremos usar
+  // 1) Pide el secret para Codespaces
   "secrets": {
     "DB_PASSWORD": {
-      "description": "Contraseña de la base de datos Aiven"
+      "description": "Contraseña de Aiven MySQL"
     }
   },
 
-  // 2) Inyectamos el secret como variable de entorno al contenedor
-  "remoteEnv": {
+  // 2) Inyecta el secret ya resuelto en la ENV del contenedor
+  "containerEnv": {
     "DB_PASSWORD": "${secret:DB_PASSWORD}"
   },
 
-  // Resto de tu configuración…
+  // (resto de tu configuración)
   "image": "mcr.microsoft.com/devcontainers/python:3.11",
   "postCreateCommand": "pip install -r requirements.txt",
   "customizations": {
