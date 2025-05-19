@@ -45,17 +45,19 @@ try:
     mse_dt = mean_squared_error(y_test, y_pred_dt)
     print('Mean Squared Error (Decision Tree):', mse_dt)
     
-    print('Comparacion Modelos: \n')
-    print('Mean Squared Error (Decision Tree):', mse_dt)
-    print('Accuracy (XGB):', accuracy_dt)
-
     dtclae_dt = XGBClassifier()
     dtclae_dt.fit(x_train, y_train)
     y_pred_dt = dtclae_dt.predict(x_test)
     accuracy_dt = accuracy_score(y_test, y_pred_dt)
     print('Accuracy (XGB):', accuracy_dt)
 
+    print('Comparacion Modelos: \n')
+    print('Mean Squared Error (Decision Tree):', mse_dt)
+    print('Accuracy (XGB):', accuracy_dt)
+
+
     print(df)
 
 finally:
     connection.close()
+    
