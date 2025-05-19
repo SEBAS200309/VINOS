@@ -1,6 +1,11 @@
 import pymysql
 import os
 import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.tree import DecisionTreeRegressor, DecisionTreeClassifier
+from xgboost import XGBRegressor, XGBClassifier
+from sklearn.metrics import accuracy_score, mean_squared_error
 
 timeout = 10
 connection = pymysql.connect(
@@ -29,11 +34,26 @@ try:
     y = df['id_quality']
     y
     print("Categorias de consumo: \n", y.value_counts())
+    
     x_train, x_test, y_train, y_test = train_test_split(x, y, test_size = 0.2, random_state = 42)
     x_test
     y_test
     
+    dt_regressor = DecisionTreeRegressor()
+    dt_regressor.fit(x_train, y_train)
+    y_pred_dt = dt_regressor.predict(x_test)
+    mse_dt = mean_squared_error(y_test, y_pred_dt)
+    print('Mean Squared Error (Decision Tree):', mse_dt)
+    
+    print('Comparacion Modelos: \n')
+    print('Mean Squared Error (Decision Tree):', mse_dt)
+    print('Accuracy (XGB):', accuracy_dt)
 
+    dtclae_dt = XGBClassifier()
+    dtclae_dt.fit(x_train, y_train)
+    y_pred_dt = dtclae_dt.predict(x_test)
+    accuracy_dt = accuracy_score(y_test, y_pred_dt)
+    print('Accuracy (XGB):', accuracy_dt)
 
     print(df)
 
