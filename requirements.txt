@@ -25,6 +25,7 @@ ml_dtypes==0.5.1
 namex==0.0.9
 narwhals==1.39.0
 numpy==2.2.5
+nvidia-nccl-cu12==2.26.5
 optree==0.15.0
 packaging==24.2
 pandas==2.2.3
@@ -54,3 +55,4 @@ typing_extensions==4.13.2
 tzdata==2025.2
 urllib3==2.4.0
 watchdog==6.0.0
+xgboost==3.0.1
