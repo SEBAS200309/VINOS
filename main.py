@@ -83,9 +83,18 @@ st.dataframe(df_csv.head())
 
 # Gráficos
 st.subheader("Distribución del contenido de alcohol")
-fig1, ax1 = plt.subplots()
+fig1, ax1 = plt.subplots(figsize=(10, 5))
 sns.histplot(df_csv["alcohol"], kde=True, ax=ax1)
+# Rotar y espaciar etiquetas del eje X para mayor legibilidad
+xticks = ax1.get_xticks()
+ax1.set_xticks(xticks[::3])  
+plt.xticks(rotation=45)
+ax1.set_title("Distribución del Alcohol")
+ax1.set_xlabel("Alcohol")
+ax1.set_ylabel("Frecuencia")
+
 st.pyplot(fig1)
+
 
 st.subheader("Distribución de la calidad del vino")
 fig2, ax2 = plt.subplots()
