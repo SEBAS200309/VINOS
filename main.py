@@ -39,13 +39,16 @@ st.subheader("Vista previa de los datos")
 st.dataframe(df.head())
 
 
-st.subheader("Distribucion del contenido de alcohol (Campana de Gauss)")
+st.subheader("Distribucion del contenido de alcohol")
 
-plt.figure(figsize=(8, 4))
+plt.figure(figsize=(10, 5))
 sns.histplot(df["alcohol"], kde=True, color="crimson", bins=30)
-plt.title("Distribucion del Alcohol")
+plt.title("Distribución del Alcohol")
 plt.xlabel("Alcohol")
 plt.ylabel("Frecuencia")
+xticks = plt.xticks()[0]                     
+filtered = xticks[::4]                        
+plt.xticks(filtered, rotation=45)             
 st.pyplot(plt)
 
 st.subheader("Distribucion de la calidad del vino (Diagrama de barras)")
