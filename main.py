@@ -1,18 +1,20 @@
-import pymysql
 import os
+import pymysql
+import pickle as pc
 
 import streamlit as st
-import pickle as pc
+import pandas as pd
+import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 from PIL import Image
-import pandas as pd
-import numpy as np
+
 from sklearn.model_selection import train_test_split
-from sklearn.tree import DecisionTreeRegressor, DecisionTreeClassifier
-from xgboost import XGBRegressor, XGBClassifier
+from sklearn.tree import DecisionTreeRegressor
+from xgboost import XGBClassifier
 from sklearn.metrics import accuracy_score, mean_squared_error
 
+# ——— CONFIGURACIÓN DE BASE DE DATOS ———
 timeout = 10
 connection = pymysql.connect(
     charset="utf8mb4",
@@ -27,176 +29,121 @@ connection = pymysql.connect(
     write_timeout=timeout,
 )
 
-try:
-    cursor = connection.cursor()
+# ——— CARGA DE DATOS Y ENTRENAMIENTO ———
+with connection.cursor() as cursor:
+    # Datos de vinos
     cursor.execute("SELECT * FROM defaultdb.`winequality-red`")
     results = cursor.fetchall()
-
-    cursor.execute ("SELECT * FROM defaultdb.quality")
-    stats = cursor.fetchall()
-
-    df_s = pd.DataFrame(stats)
-    print (df_s)
-
     df = pd.DataFrame(results)
-    df.reset_index()
 
-    df['id_quality'].replace(
-        {3: 5, 2: 4, 4: 3, 1: 2, 5: 1, 6: 0}, inplace=True)
-    x = df.drop(['id_quality', 'id_winequality'], axis=1)
-    y = df['id_quality']
+    # Tabla de calidad para mostrar nombres
+    cursor.execute("SELECT * FROM defaultdb.quality")
+    stats = cursor.fetchall()
+    df_quality = pd.DataFrame(stats)
 
+# Preprocesamiento
+# Mapear id_quality a 0–5 para modelado
+df['id_quality_mod'] = df['id_quality'].map({6:0, 5:1, 1:2, 4:3, 2:4, 3:5})
+X = df.drop(['id_quality', 'id_winequality', 'id_quality_mod'], axis=1)
+y = df['id_quality_mod']
 
-    print("Categorias de consumo: \n", y.value_counts())
+# Split train/test
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42)
 
-    x_train, x_test, y_train, y_test = train_test_split(
-        x, y, test_size=0.2, random_state=42)
-    x_test
-    y_test
+# Entrenar modelos
+dt_regressor = DecisionTreeRegressor().fit(X_train, y_train)
+xgb_model    = XGBClassifier().fit(X_train, y_train)
 
-    dt_regressor = DecisionTreeRegressor()
-    dt_regressor.fit(x_train, y_train)
-    y_pred_dt = dt_regressor.predict(x_test)
-    mse_dt = mean_squared_error(y_test, y_pred_dt)
+# Métricas de comparación
+y_pred_dt  = dt_regressor.predict(X_test)
+y_pred_xgb = xgb_model.predict(X_test)
+mse_dt  = mean_squared_error(y_test, y_pred_dt)
+acc_xgb = accuracy_score(y_test, y_pred_xgb)
 
-    xgbModel = XGBClassifier()
-    xgbModel.fit(x_train, y_train)
-    y_pred_dt = xgbModel.predict(x_test)
-    accuracy_dt = accuracy_score(y_test, y_pred_dt)
+# Guardar modelo de ejemplo (solo si no existe)
+if not os.path.exists('pr.pkl'):
+    pc.dump(xgb_model, open('pr.pkl','wb'))
 
-    print('\nComparacion Modelos: ')
-    print('Mean Squared Error (Decision Tree):', mse_dt)
-    print('Accuracy (XGB):', accuracy_dt)
-
-    # Valores de ejemplo (tal como los indicaste)
-    sample = {
-        'fixed_acidity':            [8.4],
-        'volatile_acidity':         [0.500],
-        'citric_acid':              [0.01],
-        'residual_sugar':           [1.5],
-        'chlorides':                [0.07],
-        'free_sulfur_dioxide':      [9.0],
-        'total_sulfur_dioxide':     [25.0],
-        'density':                  [0.99780],
-        'pH':                       [3.4],
-        'sulphates':                [0.7],
-        'alcohol':                  [11.4]
-    }
-
-    df_sample = pd.DataFrame(sample)
+# Cerrar conexión
+connection.close()
 
 
-    # 3.2 Con el clasificador XGB
-    pred_clf = xgbModel.predict(df_sample)
+# ——— INTERFAZ STREAMLIT ———
+st.title("Análisis de la calidad de los vinos 🍷👌")
 
-    # Invertir el mapeo para obtener el id_quality original
-    inverse_mapping = {5: 3, 4: 2, 3: 4, 2: 1, 1: 5, 0: 6}
-    pred_class = int(pred_clf[0])
-    original_id_quality = inverse_mapping.get(pred_class)
+st.markdown("**Comparación de modelos entrenados:**")
+st.write(f"- Decision Tree Regressor MSE: {mse_dt:.3f}")
+st.write(f"- XGB Classifier Accuracy: {acc_xgb:.3%}")
 
-    if original_id_quality is not None:
-        # Buscar el nombre de la categoría en el DataFrame df_s
-        categoria_row = df_s[df_s['id_quality'] == original_id_quality]
-        if not categoria_row.empty:
-            categoria_nombre = categoria_row.iloc[0]['quality']
-            prediccion = (f"El vino en cuestion tendra una calidad: {categoria_nombre}")
-            print(prediccion)
-        else:
-            print("No se encontró la categoría en la base de datos.")
-    else:
-        print(f"No se pudo mapear la clase {pred_class} predicha al id_quality original.")
+# Vista previa de datos (desde CSV local)
+st.subheader("Vista previa de los datos CSV")
+df_csv = pd.read_csv("vinos_1 .csv", sep=";")
+st.dataframe(df_csv.head())
 
-st.title("Analisis de la calidad de los vinos 🍷👌")
+# Gráficos
+st.subheader("Distribución del contenido de alcohol")
+fig1, ax1 = plt.subplots()
+sns.histplot(df_csv["alcohol"], kde=True, ax=ax1)
+st.pyplot(fig1)
 
-
-file_path = "vinos_1 .csv"
-df = pd.read_csv(file_path, sep=";")
-
-# Vista previa
-st.subheader("Vista previa de los datos")
-st.dataframe(df.head())
+st.subheader("Distribución de la calidad del vino")
+fig2, ax2 = plt.subplots()
+sns.countplot(x="quality", data=df_csv, ax=ax2)
+st.pyplot(fig2)
 
 
-st.subheader("Distribucion del contenido de alcohol")
-
-plt.figure(figsize=(10, 5))
-sns.histplot(df["alcohol"], kde=True, color="crimson", bins=30)
-plt.title("Distribución del Alcohol")
-plt.xlabel("Alcohol")
-plt.ylabel("Frecuencia")
-xticks = plt.xticks()[0]                     
-filtered = xticks[::4]                        
-plt.xticks(filtered, rotation=45)             
-st.pyplot(plt)
-
-st.subheader("Distribucion de la calidad del vino (Diagrama de barras)")
-
-plt.figure(figsize=(8, 4))
-sns.countplot(x="quality", data=df, palette="viridis")
-plt.title("Frecuencia de calidad del vino")
-plt.xlabel("Calidad")
-plt.ylabel("Cantidad de muestras")
-st.pyplot(plt)
-
-
-
-
-
-st.title("Prediccion de calidad de vinos 🍷👌")
-
-
-
-st.header("Ingresa las caracteristicas de tu vino para predecir su calidad")
-st.markdown("Completa los siguientes campos con los valores correspondientes. Todos los datos deben ser numericos:")
-
-
+# Formulario de predicción
+st.header("Predicción de calidad de vino")
 with st.form("wine_form"):
-    fixed_acidity = st.number_input("Fixed Acidity", min_value=0.0, step=0.1)
-    volatile_acidity = st.number_input("Volatile Acidity", min_value=0.0, step=0.01)
-    citric_acid = st.number_input("Citric Acid", min_value=0.0, step=0.01)
-    residual_sugar = st.number_input("Residual Sugar", min_value=0.0, step=0.1)
-    chlorides = st.number_input("Chlorides", min_value=0.0, step=0.001)
-    free_sulfur_dioxide = st.number_input("Free Sulfur Dioxide", min_value=0.0, step=1.0)
-    total_sulfur_dioxide = st.number_input("Total Sulfur Dioxide", min_value=0.0, step=1.0)
-    density = st.number_input("Density", min_value=0.0, step=0.0001)
-    pH = st.number_input("pH", min_value=0.0, step=0.01)
-    sulphates = st.number_input("Sulphates", min_value=0.0, step=0.01)
-    alcohol = st.number_input("Alcohol", min_value=0.0, step=0.1)
-
+    fa = st.number_input("Fixed Acidity", min_value=0.0, step=0.1)
+    va = st.number_input("Volatile Acidity", min_value=0.0, step=0.01)
+    ca = st.number_input("Citric Acid", min_value=0.0, step=0.01)
+    rs = st.number_input("Residual Sugar", min_value=0.0, step=0.1)
+    ch = st.number_input("Chlorides", min_value=0.0, step=0.001)
+    fs = st.number_input("Free Sulfur Dioxide", min_value=0.0, step=1.0)
+    ts = st.number_input("Total Sulfur Dioxide", min_value=0.0, step=1.0)
+    de = st.number_input("Density", min_value=0.0, step=0.0001)
+    ph = st.number_input("pH", min_value=0.0, step=0.01)
+    su = st.number_input("Sulphates", min_value=0.0, step=0.01)
+    al = st.number_input("Alcohol", min_value=0.0, step=0.1)
     submitted = st.form_submit_button("Predecir calidad")
-
 
 if submitted:
     try:
-        # Cargar modelo previamente entrenado
-        load_pred = pc.load(open('pr.pkl', 'rb'))
+        # Cargar modelo entrenado
+        model = pc.load(open('pr.pkl', 'rb'))
 
-        # Crear DataFrame con los datos ingresados
-        input_data = pd.DataFrame([{
-            "fixed acidity": fixed_acidity,
-            "volatile acidity": volatile_acidity,
-            "citric acid": citric_acid,
-            "residual sugar": residual_sugar,
-            "chlorides": chlorides,
-            "free sulfur dioxide": free_sulfur_dioxide,
-            "total sulfur dioxide": total_sulfur_dioxide,
-            "density": density,
-            "pH": pH,
-            "sulphates": sulphates,
-            "alcohol": alcohol
+        # Crear DataFrame de input con los nombres de columna que el modelo espera
+        sample = pd.DataFrame([{
+            "fixed_acidity": fa,
+            "volatile_acidity": va,
+            "citric_acid": ca,
+            "residual_sugar": rs,
+            "chlorides": ch,
+            "free_sulfur_dioxide": fs,
+            "total_sulfur_dioxide": ts,
+            "density": de,
+            "pH": ph,
+            "sulphates": su,
+            "alcohol": al
         }])
 
-        # Realizar predicción
-        prediction = load_pred.predict(input_data)[0]
-        st.success(f"La calidad estimada de tu vino es: **{prediction}** 🎯")
+        # Predecir y mapear de vuelta a id_quality original
+        pred_mod = model.predict(sample)[0]
+        inverse_map = {0:6, 1:5, 2:1, 3:4, 4:2, 5:3}
+        id_q = inverse_map[pred_mod]
 
-        # Mostrar tabla de entrada + predicción
-        input_data["Predicción de Calidad"] = prediction
-        st.dataframe(input_data)
+        # Obtener nombre de calidad
+        row = df_quality[df_quality['id_quality']==id_q]
+        label = row.iloc[0]['quality'] if not row.empty else str(id_q)
+
+        st.success(f"La calidad estimada de tu vino es: **{label}**")
+
+        # Mostrar tabla con input y resultado
+        sample['Predicción'] = label
+        st.dataframe(sample)
 
     except Exception as e:
-        st.error("Hubo un error al cargar el modelo o al hacer la predicción.")
+        st.error("Error al cargar el modelo o hacer la predicción.")
         st.exception(e)
-    finally:
-      
-    connection.close()
