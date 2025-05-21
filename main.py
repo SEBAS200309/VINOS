@@ -146,6 +146,7 @@ fig, ax = plt.subplots(figsize=(8, 5))
 ax.hist(df_mb['pH'], bins=20, density=True, alpha=0.6, edgecolor='black')
 ax.plot(x, pdf, linewidth=2)
 
+st.subheader("Distribución de pH para vinos de categoria Muy buenos")
 ax.set_title(f"Distribución de pH para vinos 'Muy Bueno' con curva gaussiana: (asimetria = {skewness:.2f})")
 ax.set_xlabel("pH")
 ax.set_ylabel("Densidad")
