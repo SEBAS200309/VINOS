@@ -30,6 +30,7 @@ def mantener_activa_db():
     """
     while True:
         try:
+            timeout = 10
             conn = pymysql.connect(
                 charset="utf8mb4",
                 connect_timeout=timeout,
@@ -44,12 +45,31 @@ def mantener_activa_db():
             )
             with conn.cursor() as cursor:
                 cursor.execute("SELECT 1;")
+                # Devuelve un dict, por ejemplo {"1": 1}
+                resultado = cursor.fetchone()
+                # Dependiendo de la versión de pymysql, el diccionario puede tener llave '1' o '1'.
+                # Para asegurarnos, buscamos el primer valor numérico:
+                valor = None
+                if isinstance(resultado, dict):
+                    # Tomamos el primer valor del diccionario
+                    valor = list(resultado.values())[0]
+                else:
+                    # Si devuelve una tupla, por ejemplo (1,), la desestructuramos
+                    valor = resultado[0] if resultado else None
+
+                if valor == 1:
+                    print("[Keep-alive] Ping exitoso: SELECT 1 devolvió 1")
+                else:
+                    print(
+                        f"[Keep-alive] Atención: SELECT 1 devolvió algo inesperado: {resultado}")
+
             conn.close()
         except Exception as e:
-            # Aquí podrías capturar e imprimir/loguear el error
+            # Si hay un error (conexion, timeout, etc.), lo reportamos
             print(f"[Keep-alive] Error al intentar ping: {e}")
         # Espera 10 horas antes del siguiente ping
         time.sleep(10 * 60 * 60)
+
 
 # Al iniciar la aplicación, arrancas el hilo:
 hilo_keepalive = threading.Thread(target=mantener_activa_db, daemon=True)
