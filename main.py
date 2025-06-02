@@ -2,6 +2,8 @@ import os
 import pymysql
 import pickle as pc
 import random
+import time
+import threading
 
 import streamlit as st
 import pandas as pd
@@ -16,6 +18,62 @@ from sklearn.metrics import accuracy_score, mean_squared_error
 from sklearn.utils import compute_class_weight
 from scipy.stats import norm
 
+import threading
+import time
+import pymysql
+
+
+def mantener_activa_db():
+    """
+    Función que se ejecuta en segundo plano para hacer un SELECT 1 periódico
+    y evitar que Aiven detenga el servicio por inactividad.
+    """
+    while True:
+        try:
+            timeout = 10
+            conn = pymysql.connect(
+                charset="utf8mb4",
+                connect_timeout=timeout,
+                cursorclass=pymysql.cursors.DictCursor,
+                db="defaultdb",
+                host="service-vinos-academia-c9e6.d.aivencloud.com",
+                password=os.getenv("DB_PASSWORD"),
+                read_timeout=timeout,
+                port=11434,
+                user="avnadmin",
+                write_timeout=timeout,
+            )
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT 1;")
+                # Devuelve un dict, por ejemplo {"1": 1}
+                resultado = cursor.fetchone()
+                # Dependiendo de la versión de pymysql, el diccionario puede tener llave '1' o '1'.
+                # Para asegurarnos, buscamos el primer valor numérico:
+                valor = None
+                if isinstance(resultado, dict):
+                    # Tomamos el primer valor del diccionario
+                    valor = list(resultado.values())[0]
+                else:
+                    # Si devuelve una tupla, por ejemplo (1,), la desestructuramos
+                    valor = resultado[0] if resultado else None
+
+                if valor == 1:
+                    print("[Keep-alive] Ping exitoso: SELECT 1 devolvió 1")
+                else:
+                    print(
+                        f"[Keep-alive] Atención: SELECT 1 devolvió algo inesperado: {resultado}")
+
+            conn.close()
+        except Exception as e:
+            # Si hay un error (conexion, timeout, etc.), lo reportamos
+            print(f"[Keep-alive] Error al intentar ping: {e}")
+        # Espera 10 horas antes del siguiente ping
+        time.sleep(10 * 60 * 60)
+
+
+# Al iniciar la aplicación, arrancas el hilo:
+hilo_keepalive = threading.Thread(target=mantener_activa_db, daemon=True)
+hilo_keepalive.start()
 
 # ——— CONFIGURACIÓN DE BASE DE DATOS ———
 timeout = 10
@@ -43,9 +101,10 @@ with connection.cursor() as cursor:
     cursor.execute("SELECT * FROM defaultdb.quality")
     stats = cursor.fetchall()
     df_quality = pd.DataFrame(stats)
-    print(df_quality) 
+    print(df_quality)
 
-    cursor.execute("SELECT * FROM defaultdb.`winequality-red` JOIN defaultdb.quality ON defaultdb.`winequality-red`.id_quality = defaultdb.quality.id_quality")
+    cursor.execute(
+        "SELECT * FROM defaultdb.`winequality-red` JOIN defaultdb.quality ON defaultdb.`winequality-red`.id_quality = defaultdb.quality.id_quality")
     data_join = cursor.fetchall()
     df_data_join = pd.DataFrame(data_join)
     print(df_data_join.head())
@@ -54,11 +113,12 @@ connection.close()
 
 # Dividir en DataFrame para mostrar y para ML
 df_display = df.copy()  # para Streamlit (vistas y gráficas)
-df_ml      = df.copy()  # para preprocesar y entrenar
+df_ml = df.copy()  # para preprocesar y entrenar
 
 # ——— PREPROCESAMIENTO Y ENTRENAMIENTO ———
 # Mapear id_quality a 0–5 para modelado
-df_ml['id_quality_mod'] = df_ml['id_quality'].map({6:0, 5:1, 1:2, 4:3, 2:4, 3:5})
+df_ml['id_quality_mod'] = df_ml['id_quality'].map(
+    {6: 0, 5: 1, 1: 2, 4: 3, 2: 4, 3: 5})
 
 # Features y target
 X = df_ml.drop(['id_quality', 'id_winequality', 'id_quality_mod'], axis=1)
@@ -75,17 +135,18 @@ X_train, X_test, y_train, y_test = train_test_split(
 
 # Entrenamiento
 dt_regressor = DecisionTreeRegressor().fit(X_train, y_train)
-xgb_model    = XGBClassifier().fit(X_train, y_train, sample_weight=y_train.map(class_weights))
+xgb_model = XGBClassifier().fit(
+    X_train, y_train, sample_weight=y_train.map(class_weights))
 
 # Métricas
-y_pred_dt  = dt_regressor.predict(X_test)
+y_pred_dt = dt_regressor.predict(X_test)
 y_pred_xgb = xgb_model.predict(X_test)
-mse_dt     = mean_squared_error(y_test, y_pred_dt)
-acc_xgb    = accuracy_score(y_test, y_pred_xgb)
+mse_dt = mean_squared_error(y_test, y_pred_dt)
+acc_xgb = accuracy_score(y_test, y_pred_xgb)
 
 # Guardar modelo XGB si no existe
 if not os.path.exists('pr.pkl'):
-    pc.dump(xgb_model, open('pr.pkl','wb'))
+    pc.dump(xgb_model, open('pr.pkl', 'wb'))
 
 # ——— INTERFAZ STREAMLIT ———
 st.title("Análisis de la calidad de los vinos 🍷👌")
@@ -100,7 +161,7 @@ st.subheader("Vista previa de los datos (base de datos)")
 st.dataframe(df_data_join.head())
 
 # --------- Graficas ----------
-#Distribución del contenido de alcohol
+# Distribución del contenido de alcohol
 st.subheader("Distribución del contenido de alcohol (DB)")
 fig1, ax1 = plt.subplots(figsize=(10, 5))
 sns.histplot(df_display["alcohol"], kde=True, ax=ax1)
@@ -112,7 +173,7 @@ ax1.set_xlabel("Alcohol")
 ax1.set_ylabel("Frecuencia")
 st.pyplot(fig1)
 
-#Distribución de la calidad del vino
+# Distribución de la calidad del vino
 st.subheader("Distribución de la calidad del vino (DB)")
 fig2, ax2 = plt.subplots()
 sns.countplot(x="quality", data=df_data_join, ax=ax2)
@@ -122,22 +183,22 @@ ax2.set_xlabel("id_quality")
 ax2.set_ylabel("Conteo")
 st.pyplot(fig2)
 
-#Promedio de ph de los vinos que son de calidad muy bueno
+# Promedio de ph de los vinos que son de calidad muy bueno
 
 df_mb = df_display[df_display['id_quality'] == 4]
 # 2. Calcular media, mediana y asimetría
-mean_pH   = df_mb['pH'].mean()
+mean_pH = df_mb['pH'].mean()
 median_pH = df_mb['pH'].median()
-skewness  = df_mb['pH'].skew()
-std_ph  = df_mb['pH'].std()
+skewness = df_mb['pH'].skew()
+std_ph = df_mb['pH'].std()
 
 # 3. Elegir estadístico según asimetría
 if abs(skewness) > 0.5:
     value = median_pH
-    label  = 'Mediana'
+    label = 'Mediana'
 else:
     value = mean_pH
-    label  = 'Media'
+    label = 'Media'
 # 4. Plot
 x = np.linspace(df_mb['pH'].min(), df_mb['pH'].max(), 200)
 pdf = norm.pdf(x, loc=value, scale=std_ph)
@@ -147,7 +208,8 @@ ax.hist(df_mb['pH'], bins=20, density=True, alpha=0.6, edgecolor='black')
 ax.plot(x, pdf, linewidth=2)
 
 st.subheader("Distribución de pH para vinos de categoria Muy buenos")
-ax.set_title(f"Distribución de pH para vinos 'Muy Bueno' con curva gaussiana: (asimetria = {skewness:.2f})")
+ax.set_title(
+    f"Distribución de pH para vinos 'Muy Bueno' con curva gaussiana: (asimetria = {skewness:.2f})")
 ax.set_xlabel("pH")
 ax.set_ylabel("Densidad")
 st.pyplot(fig)
@@ -270,11 +332,11 @@ if submitted:
 
         # Predicción y mapeo inverso
         pred_mod = model.predict(sample)[0]
-        inverse_map = {0:6, 1:5, 2:1, 3:4, 4:2, 5:3}
+        inverse_map = {0: 6, 1: 5, 2: 1, 3: 4, 4: 2, 5: 3}
         id_q = inverse_map[pred_mod]
 
         # Obtener etiqueta legible
-        row = df_quality[df_quality['id_quality']==id_q]
+        row = df_quality[df_quality['id_quality'] == id_q]
         label = row.iloc[0]['quality'] if not row.empty else str(id_q)
 
         st.success(f"La calidad estimada de tu vino es: **{label}**")
@@ -283,20 +345,21 @@ if submitted:
         sample['Predicción'] = label
         st.dataframe(sample)
 
-
     except Exception as e:
         st.error("Error al cargar el modelo o hacer la predicción.")
         st.exception(e)
-        
+
 # --------- Perfil Quimico Promedio ----------
 # Crear una copia para análisis, sin la columna id_quality
 df_ml = df_display.copy()
 # Aplicar mapeo correcto
-df_ml['id_quality_mod'] = df_ml['id_quality'].map({6:0, 5:1, 1:2, 4:3, 2:4, 3:5})
+df_ml['id_quality_mod'] = df_ml['id_quality'].map(
+    {6: 0, 5: 1, 1: 2, 4: 3, 2: 4, 3: 5})
 # Filtrar solo los vinos de calidad excepcional
 df_excepcional = df_ml[df_ml['id_quality_mod'] == 5]
 # Eliminar columnas irrelevantes
-df_excepcional = df_excepcional.drop(columns=['id_quality', 'id_winequality', 'id_quality_mod'], errors='ignore')
+df_excepcional = df_excepcional.drop(
+    columns=['id_quality', 'id_winequality', 'id_quality_mod'], errors='ignore')
 # Calcular el promedio por columna (perfil ideal de vino excepcional)
 mejores_valores = df_excepcional.mean().round(3)
 
@@ -308,17 +371,18 @@ st.dataframe(mejores_valores.to_frame(name="Valor ideal").T)
 
 # --------- Parametros que para el modelo son excepcionales ----------
 # 1. Define el modelo y el mapeo
-model = pc.load(open('pr.pkl','rb'))
-inverse_map = {0:6, 1:5, 2:1, 3:4, 4:2, 5:3}
+model = pc.load(open('pr.pkl', 'rb'))
+inverse_map = {0: 6, 1: 5, 2: 1, 3: 4, 4: 2, 5: 3}
 
 # 2. Rango de cada variable según df_display
 features = [
-    "fixed_acidity","volatile_acidity","citric_acid","residual_sugar",
-    "chlorides","free_sulfur_dioxide","total_sulfur_dioxide",
-    "density","pH","sulphates","alcohol"
+    "fixed_acidity", "volatile_acidity", "citric_acid", "residual_sugar",
+    "chlorides", "free_sulfur_dioxide", "total_sulfur_dioxide",
+    "density", "pH", "sulphates", "alcohol"
 ]
 
-df_rango = df_display.drop(columns=['id_quality', 'id_winequality'], errors='ignore')
+df_rango = df_display.drop(
+    columns=['id_quality', 'id_winequality'], errors='ignore')
 
 ranges = {f: (df_rango[f].min(), df_rango[f].max()) for f in features}
 
@@ -336,4 +400,5 @@ if best:
     out = pd.DataFrame([best]).round(3)
     st.dataframe(out)
 else:
-    st.warning("No encontramos en 20 000 intentos una combinación que clasifique como excepcional.")
+    st.warning(
+        "No encontramos en 20 000 intentos una combinación que clasifique como excepcional.")
