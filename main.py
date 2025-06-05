@@ -306,6 +306,10 @@ st.subheader("📊 Perfil químico promedio de un vino excepcional")
 st.write("Estos son los valores promedio de cada característica en vinos con calidad más alta:")
 st.dataframe(mejores_valores.to_frame(name="Valor ideal").T)
 
+# Botón para cargar el perfil promedio de vino excepcional en el formulario
+if st.button("📥 Usar perfil promedio de vino excepcional"):
+    st.session_state.random_sample = mejores_valores.to_dict()
+    st.rerun()
 
 # --------- Parametros que para el modelo son excepcionales ----------
 # 1. Define el modelo y el mapeo
@@ -324,19 +328,28 @@ df_rango = df_display.drop(
 
 ranges = {f: (df_rango[f].min(), df_rango[f].max()) for f in features}
 
-best = None
-for _ in range(20000):
-    sample = {f: random.uniform(*ranges[f]) for f in features}
-    df_sample = pd.DataFrame([sample])
-    pred = model.predict(df_sample)[0]
-    if pred == 5:  # 5 = excepcional según tu mapeo
-        best = sample
-        break
+# --- Generar solo una vez los parámetros excepcionales y guardarlos en session_state ---
+if "best_excepcional" not in st.session_state:
+    best = None
+    for _ in range(20000):
+        sample = {f: random.uniform(*ranges[f]) for f in features}
+        df_sample = pd.DataFrame([sample])
+        pred = model.predict(df_sample)[0]
+        if pred == 5:  # 5 = excepcional según tu mapeo
+            best = sample
+            break
+    st.session_state.best_excepcional = best
+else:
+    best = st.session_state.best_excepcional
 
 if best:
     st.subheader("🔍 Parámetros que el modelo clasifica como Excepcional")
     out = pd.DataFrame([best]).round(3)
     st.dataframe(out)
+    # Botón para cargar el perfil promedio de vino excepcional en el formulario
+    if st.button("📥 Usar parámetros que el modelo clasifica como Excepcional"):
+        st.session_state.random_sample = best
+        st.rerun()
 else:
     st.warning(
         "No encontramos en 20 000 intentos una combinación que clasifique como excepcional.")
