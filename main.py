@@ -1,5 +1,5 @@
 import os
-import pymysql
+import sqlite3
 import pickle as pc
 import random
 import time
@@ -22,98 +22,36 @@ import threading
 import time
 import pymysql
 
+# 1) Conexión SQLite en memoria:
+conn = sqlite3.connect(":memory:")
+conn.row_factory = sqlite3.Row
 
-def mantener_activa_db():
-    """
-    Función que se ejecuta en segundo plano para hacer un SELECT 1 periódico
-    y evitar que Aiven detenga el servicio por inactividad.
-    """
-    while True:
-        try:
-            timeout = 10
-            conn = pymysql.connect(
-                charset="utf8mb4",
-                connect_timeout=timeout,
-                cursorclass=pymysql.cursors.DictCursor,
-                db="defaultdb",
-                host="service-vinos-academia-c9e6.d.aivencloud.com",
-                password=os.getenv("DB_PASSWORD"),
-                read_timeout=timeout,
-                port=11434,
-                user="avnadmin",
-                write_timeout=timeout,
-            )
-            with conn.cursor() as cursor:
-                cursor.execute("SELECT 1;")
-                # Devuelve un dict, por ejemplo {"1": 1}
-                resultado = cursor.fetchone()
-                # Dependiendo de la versión de pymysql, el diccionario puede tener llave '1' o '1'.
-                # Para asegurarnos, buscamos el primer valor numérico:
-                valor = None
-                if isinstance(resultado, dict):
-                    # Tomamos el primer valor del diccionario
-                    valor = list(resultado.values())[0]
-                else:
-                    # Si devuelve una tupla, por ejemplo (1,), la desestructuramos
-                    valor = resultado[0] if resultado else None
+# 2) ejecucion de SQL_sentencias
+script_path = os.path.join(os.path.dirname(__file__), "SQL_sentencias.sql")
+with open(script_path, "r", encoding="utf-8") as f:
+    sql_script = f.read()
+conn.executescript(sql_script)
 
-                if valor == 1:
-                    print("[Keep-alive] Ping exitoso: SELECT 1 devolvió 1")
-                else:
-                    print(
-                        f"[Keep-alive] Atención: SELECT 1 devolvió algo inesperado: {resultado}")
+# 3) Obtener datos quality
+df_quality = pd.read_sql_query("SELECT * FROM quality", conn)
 
-            conn.close()
-        except Exception as e:
-            # Si hay un error (conexion, timeout, etc.), lo reportamos
-            print(f"[Keep-alive] Error al intentar ping: {e}")
-        # Espera 10 horas antes del siguiente ping
-        time.sleep(10 * 60 * 60)
+# 4) Obtener datos winequality-red
+df = pd.read_sql_query("SELECT * FROM 'winequality-red';", conn)
 
-
-# Al iniciar la aplicación, arrancas el hilo:
-hilo_keepalive = threading.Thread(target=mantener_activa_db, daemon=True)
-hilo_keepalive.start()
-
-# ——— CONFIGURACIÓN DE BASE DE DATOS ———
-timeout = 10
-connection = pymysql.connect(
-    charset="utf8mb4",
-    connect_timeout=timeout,
-    cursorclass=pymysql.cursors.DictCursor,
-    db="defaultdb",
-    host="service-vinos-academia-c9e6.d.aivencloud.com",
-    password=os.getenv("DB_PASSWORD"),
-    read_timeout=timeout,
-    port=11434,
-    user="avnadmin",
-    write_timeout=timeout,
-)
-
-# ——— CARGA DE DATOS Y PREPARACIÓN ———
-with connection.cursor() as cursor:
-    # Datos crudos de vinos
-    cursor.execute("SELECT * FROM defaultdb.`winequality-red`")
-    results = cursor.fetchall()
-    df = pd.DataFrame(results)
-
-    # Tabla de calidad para etiquetas
-    cursor.execute("SELECT * FROM defaultdb.quality")
-    stats = cursor.fetchall()
-    df_quality = pd.DataFrame(stats)
-    print(df_quality)
-
-    cursor.execute(
-        "SELECT * FROM defaultdb.`winequality-red` JOIN defaultdb.quality ON defaultdb.`winequality-red`.id_quality = defaultdb.quality.id_quality")
-    data_join = cursor.fetchall()
-    df_data_join = pd.DataFrame(data_join)
-    print(df_data_join.head())
-
-connection.close()
+# 5) Hacer el JOIN para armar df_data_join (igual que antes)
+query = """
+    SELECT wq.*, q.quality
+      FROM 'winequality-red' AS wq
+INNER JOIN quality AS q
+        ON wq.id_quality = q.id_quality
+"""
+df_data_join = pd.read_sql_query(query, conn)
 
 # Dividir en DataFrame para mostrar y para ML
 df_display = df.copy()  # para Streamlit (vistas y gráficas)
 df_ml = df.copy()  # para preprocesar y entrenar
+
+conn.close()
 
 # ——— PREPROCESAMIENTO Y ENTRENAMIENTO ———
 # Mapear id_quality a 0–5 para modelado
