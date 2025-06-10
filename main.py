@@ -11,6 +11,7 @@ import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 
+from sklearn.metrics import classification_report
 from sklearn.model_selection import train_test_split
 from sklearn.tree import DecisionTreeRegressor
 from xgboost import XGBClassifier
@@ -94,6 +95,29 @@ st.markdown("**Comparación de modelos entrenados:**")
 st.write(f"- Decision Tree Regressor MSE: {mse_dt:.3f}")
 st.write(f"- XGB Classifier Accuracy: {acc_xgb:.3%}")
 
+# Obtener el reporte en formato dict
+report_dict = classification_report(
+    y_test,
+    y_pred_xgb,
+    target_names=df_quality['quality'].values,
+    output_dict=True
+)
+
+# Convertir a DataFrame completo
+report_df = pd.DataFrame(report_dict).transpose().round(2)
+
+# Separar métricas por clase vs resumen
+resumen_df = report_df.loc[["accuracy", "macro avg", "weighted avg"]]
+clases_df = report_df.drop(index=["accuracy", "macro avg", "weighted avg"], errors="ignore")
+
+# Mostrar tabla de clases
+st.subheader("📊 Métricas por clase")
+st.dataframe(clases_df)
+
+# Mostrar tabla resumen
+st.subheader("📈 Resumen del modelo")
+st.dataframe(resumen_df)
+
 # Vista previa de datos desde la base de datos
 st.subheader("Vista previa de los datos (base de datos)")
 st.dataframe(df_data_join.head())
@@ -117,7 +141,7 @@ fig2, ax2 = plt.subplots()
 sns.countplot(x="quality", data=df_data_join, ax=ax2)
 ax2.set_xticklabels(ax2.get_xticklabels(), rotation=45)
 ax2.set_title("Frecuencia de id_quality")
-ax2.set_xlabel("id_quality")
+ax2.set_xlabel("Calidad del Vino (id_quality)")
 ax2.set_ylabel("Conteo")
 st.pyplot(fig2)
 
