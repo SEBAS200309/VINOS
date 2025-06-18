@@ -18,6 +18,7 @@ from xgboost import XGBClassifier
 from sklearn.metrics import accuracy_score, mean_squared_error
 from sklearn.utils import compute_class_weight
 from scipy.stats import norm
+from imblearn.over_sampling import SMOTE
 
 import threading
 import time
@@ -59,23 +60,39 @@ conn.close()
 df_ml['id_quality_mod'] = df_ml['id_quality'].map(
     {6: 0, 5: 1, 1: 2, 4: 3, 2: 4, 3: 5})
 
+print(df_ml['id_quality_mod'].value_counts())
+
 # Features y target
 X = df_ml.drop(['id_quality', 'id_winequality', 'id_quality_mod'], axis=1)
 y = df_ml['id_quality_mod']
 
-# Calcular pesos inversos al tamaño de clase
-classes = np.unique(y)
-weights = compute_class_weight(class_weight='balanced', classes=classes, y=y)
-class_weights = dict(zip(classes, weights))
-
 # Split train/test
 X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42)
+    X, y, test_size=0.2, random_state=42, stratify=y)
+
+classes = np.unique(y_train)
+weights = compute_class_weight(
+    class_weight='balanced',
+    classes=classes,
+    y=y_train
+)    
+
+class_weights = dict(zip(classes, weights))
+
+print("PESOS: ",class_weights)
+
+# Prepara un DataFrame para mostrar en Streamlit
+weights_df = pd.DataFrame({
+    'id_quality_mod': list(class_weights.keys()),
+    'weight': [round(w, 2) for w in class_weights.values()]
+}).sort_values('id_quality_mod')
+
+sample_weight = y_train.map(class_weights)
 
 # Entrenamiento
 dt_regressor = DecisionTreeRegressor().fit(X_train, y_train)
-xgb_model = XGBClassifier().fit(
-    X_train, y_train, sample_weight=y_train.map(class_weights))
+xgb_model = XGBClassifier(use_label_encoder=False, eval_metric='mlogloss', random_state=42)
+xgb_model.fit(X_train, y_train, sample_weight=sample_weight)
 
 # Métricas
 y_pred_dt = dt_regressor.predict(X_test)
@@ -95,11 +112,24 @@ st.markdown("**Comparación de modelos entrenados:**")
 st.write(f"- Decision Tree Regressor MSE: {mse_dt:.3f}")
 st.write(f"- XGB Classifier Accuracy: {acc_xgb:.3%}")
 
-# Obtener el reporte en formato dict
+# Crear el mapeo correcto: id_quality_mod (0-5) → etiquetas reales
+id_quality_to_label = {
+    0: "Vino defectuoso",
+    1: "Regular",
+    2: "Bueno",
+    3: "Muy Bueno",
+    4: "Excelente",
+    5: "Excepcional"
+}
+
+# Generar los labels ordenados para que coincidan con y_test e y_pred_xgb
+target_names = [id_quality_to_label[i] for i in sorted(id_quality_to_label.keys())]
+
+# Obtener el reporte correctamente
 report_dict = classification_report(
     y_test,
     y_pred_xgb,
-    target_names=df_quality['quality'].values,
+    target_names=target_names,
     output_dict=True
 )
 
@@ -117,6 +147,16 @@ st.dataframe(clases_df)
 # Mostrar tabla resumen
 st.subheader("📈 Resumen del modelo")
 st.dataframe(resumen_df)
+
+# ——— 4) Mostrar explicación y tabla de pesos ———
+st.subheader("⚖️ Pesos de clase para balanceo")
+st.write("""
+Dado que algunas categorías tienen muy pocos ejemplos (como `id_quality_mod=0` o `=5`),
+asignamos **pesos inversamente proporcionales** a su frecuencia para que el modelo
+preste más atención a ellas y evite sesgos hacia las clases mayoritarias.
+""")
+st.dataframe(weights_df.set_index('id_quality_mod'))
+
 
 # Vista previa de datos desde la base de datos
 st.subheader("Vista previa de los datos (base de datos)")
